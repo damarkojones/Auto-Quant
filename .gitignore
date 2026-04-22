@@ -1,0 +1,28 @@
+# results journal — untracked by design so experience survives `git reset`
+results.tsv
+
+# run logs — every experiment writes run.log, never commit
+run.log
+*.log
+
+# FreqTrade-generated output
+user_data/data/
+user_data/backtest_results/
+user_data/logs/
+user_data/hyperopt_results/
+user_data/notebooks/.ipynb_checkpoints/
+
+# Python / uv
+__pycache__/
+*.pyc
+.venv/
+.python-version.lock
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Jupyter
+.ipynb_checkpoints/
