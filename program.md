@@ -20,8 +20,11 @@ To set up a new experiment, work with the user to:
    - `prepare.py` — data download. Do not modify.
    - `run.py` — the backtest oracle. Do not modify.
    - `user_data/strategies/AutoResearch.py` — **the file you modify**
-4. **Verify data exists**: Check that `user_data/data/binance/BTC_USDT-1h.feather`
-   and `ETH_USDT-1h.feather` exist. If not, tell the user to run `uv run prepare.py`.
+4. **Verify data exists**: Check that `user_data/data/BTC_USDT-1h.feather`
+   and `user_data/data/ETH_USDT-1h.feather` exist. If not, tell the user to run
+   `uv run prepare.py`. (Note: `prepare.py` passes an explicit `datadir` so the
+   files live flat under `user_data/data/`, not under an `binance/` subdir.
+   This is intentional — `run.py` reads from the same path.)
 5. **Initialize results.tsv**: Create `results.tsv` with just the header row.
    The baseline will be recorded after the first run.
 6. **Confirm and go**: Confirm setup looks good with the user.
