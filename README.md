@@ -31,29 +31,35 @@ them. Full write-up in
 
 ## How it works
 
-Four files that matter:
+Four things that matter:
 
 - **`config.json`** — FreqTrade config, fixed. Pairs, timeframe, fees, dry-run
   wallet, timerange. The agent does not touch this.
 - **`prepare.py`** — one-time data download from Binance via FreqTrade's Python
   API. The agent does not touch this.
-- **`run.py`** — in-process backtest. Calls FreqTrade's `Backtesting` class
-  directly (no CLI), extracts key metrics, prints a parseable `---` summary
-  block to stdout. The agent does not touch this.
-- **`user_data/strategies/AutoResearch.py`** — **the only file the agent edits**.
-  Contains the full strategy: indicators, entry/exit logic, ROI/stoploss. This
-  is the `train.py` equivalent of Karpathy's setup.
+- **`run.py`** — in-process **batch backtest**. Discovers every `.py` under
+  `user_data/strategies/` (skipping files prefixed `_`), runs FreqTrade's
+  `Backtesting` for each, and prints one `---` summary block per strategy.
+  The agent does not touch this.
+- **`user_data/strategies/`** — **the directory the agent owns**. Each `.py`
+  is one strategy; up to 3 active at a time. Agent creates / evolves / forks
+  / kills strategies here. `_template.py.example` is the skeleton reference.
 
 Plus:
 
 - **`program.md`** — the autonomous-research instructions the human points the
-  LLM agent at. Direct analog of Karpathy's `program.md`.
-- **`results.tsv`** — the journal. `commit | sharpe | max_dd | status | description`.
-  Git-ignored so it survives `git reset --hard` when the agent rolls back a
-  failed experiment — past lessons stay available even when experimental
+  LLM agent at.
+- **`results.tsv`** — event log. Schema: `commit | event | strategy_name | sharpe | max_dd | note`.
+  Events: `create | evolve | stable | fork | kill`. Gitignored so it survives
+  `git reset --hard` — past lessons stay available even when experimental
   commits get thrown away.
-- **`analysis.ipynb`** — post-hoc read of `results.tsv` once the loop has
-  collected some data.
+- **`analysis.ipynb`** — post-hoc read: per-strategy trajectories, cap
+  utilization, event distribution, note word frequency.
+
+*(v0.1.0 used a single `AutoResearch.py` file that the agent mutated in place.
+That mode anchored the agent on one paradigm for all 99 rounds. v0.2.0
+switched to multi-strategy; v0.1.0 is archived under [`versions/0.1.0/`](versions/0.1.0/)
+with a full [retrospective](versions/0.1.0/retrospective.md).)*
 
 ## Requirements
 
@@ -79,11 +85,15 @@ uv sync
 # 4. One-time data download (~a few minutes)
 uv run prepare.py
 
-# 5. Sanity check — run the baseline backtest
-uv run run.py > run.log 2>&1 && grep "^---" -A 12 run.log
+# 5. Sanity check — with no strategies yet, run.py should report
+#    "no strategies found" and exit. That's expected — the agent creates
+#    1-3 starting strategies during setup before the first real backtest.
+uv run run.py > run.log 2>&1; echo "exit=$?"
 ```
 
-If step 5 prints a `---` block ending with a `pairs:` line, you're ready.
+If step 5 prints `no strategies found...` and `exit=2`, you're ready. (An
+actual backtest run only starts once the agent has created at least one
+strategy file.)
 
 ## Running the agent
 
@@ -131,27 +141,34 @@ Auto-Quant/
 ├── analysis.ipynb                     # post-hoc analysis
 ├── user_data/
 │   ├── strategies/
-│   │   └── AutoResearch.py            # THE one file the agent edits
+│   │   ├── _template.py.example       # skeleton the agent copies from
+│   │   └── <agent-created files>.py   # up to 3 active at a time
 │   ├── data/                          # gitignored — downloaded OHLCV
 │   └── backtest_results/              # gitignored — FreqTrade outputs
-└── results.tsv                        # gitignored — agent's journal
+├── versions/                          # frozen snapshots of past runs
+└── results.tsv                        # gitignored — agent's event log
 ```
 
 ## Design notes
 
-- **Agent only modifies one file.** All other files are the evaluation
-  contract. This is the single biggest design decision; it keeps diffs
-  reviewable and prevents Goodharting the metric.
+- **Agent owns one directory, not one file.** `user_data/strategies/` is its
+  workspace; everything else is evaluation contract. Up to 3 strategies
+  simultaneously, hard cap. Multi-strategy exists specifically to fight
+  the single-paradigm anchoring that v0.1.0 exhibited.
 - **No CLI indirection.** The agent only runs `uv run prepare.py` and
   `uv run run.py`. `run.py` uses FreqTrade's `Backtesting` class in-process,
   so startup is fast and errors surface as real Python stack traces.
-- **`results.tsv` is gitignored.** When the agent reverts a failed
-  experiment with `git reset --hard`, the journal of what was tried
-  survives. Essential to avoid re-trying the same bad ideas.
-- **LLM decides keep/discard, not a scalar rule.** Backtest Sharpe on a
-  finite window is noisy. Rather than `if new_sharpe > old_sharpe: keep`,
-  the agent reads the full summary block and decides based on sharpe +
-  drawdown + trade count + its own read on the asset.
+- **`results.tsv` is a gitignored event log.** Each round, the agent appends
+  rows (one per strategy touched, with event type: create/evolve/stable/fork/kill).
+  It survives `git reset --hard` so past lessons stay available even when
+  experimental commits get thrown away.
+- **LLM decides keep/kill, not a scalar rule.** Sharpe on a finite window
+  is noisy and gameable. Agent reads the full per-strategy summary blocks
+  and decides inline which strategies to evolve, fork, or kill — the
+  program.md rules force action but not which action.
+- **Stagnation rule.** A strategy can't sit idle for more than 3 consecutive
+  stable rounds — agent must evolve, fork, or kill it. With only 3 slots,
+  dead weight is expensive.
 
 ## License
 
